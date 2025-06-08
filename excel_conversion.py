@@ -12,9 +12,13 @@ wb = None
 df = None
 file_path = None
 
-def show_splash_and_launch_main():
+def TF():#テスト用 TESTING FUNCTION
+    messagebox.showinfo("TESTING FUNCTION", "THIS IS TESTING FUNCTION")
+
+
+def show_splash_and_launch_main(): #起動画面の表示
     splash = tk.Tk()
-    splash.title("起動中...")
+    splash.title("wait...")
 
     # ウィンドウのサイズと位置
     splash_width = 400
@@ -79,93 +83,110 @@ def attempt_repair_xls(filepath):
 
 def open_file():
     global wb, df, file_path
+    clear_columns_display()
     selected_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
 
     if selected_path:
-        file_path = selected_path  # ← ここで記録
+        file_path = selected_path
         filename = os.path.basename(file_path)
-        file_label.config(text=filename)
+        file_label.config(text=f"{filename}", fg="blue", cursor="hand2")
+        file_label.bind("<Button-1>", lambda e: os.startfile(file_path))
+        ToolTip(file_label, "クリックでファイルを開く")
 
-        if file_path:
-            filename = os.path.basename(file_path)
-            file_label.config(text=f"{filename}", fg ="blue", cursor="hand2")
-            file_label.bind("<Button-1>", lambda e: os.startfile(file_path))
-            ToolTip(file_label, "クリックでファイルを開く")
+        if file_path.endswith(".xls"):
+            try:
+                df = pd.read_excel(file_path, engine="xlrd")
 
-            if file_path.endswith(".xls"):
-                try:
-                    df = pd.read_excel(file_path, engine="xlrd")
-                    wb = None
-                    analyze_columns_xls(df)
-                except Exception:
-                    actual_format = detect_excel_format(file_path)
-                    if actual_format == 'xlsx':
-                        repaired = attempt_repair_xls(file_path)
-                        if repaired:
-                            wb = px.load_workbook(repaired, data_only=True)
-                            analyze_columns_xlsx(wb)
-                    else:
-                        messagebox.showerror("エラー", "xlsファイルが破損しているか、形式が異なっています。")
-            else:
-                try:
-                    wb = px.load_workbook(file_path, data_only=True)
-                    analyze_columns_xlsx(file_path)
-                except Exception as e:
-                    messagebox.showerror("エラー", f"ファイルを読み込めませんでした\n{e}")
+                # 列名がすべてUnnamedまたは欠損のときはExcel風の列名を生成
+                if all([str(col).startswith("Unnamed") or pd.isna(col) for col in df.columns]):
+                    df.columns = [get_excel_column_name(i + 1) for i in range(len(df.columns))]
 
+                wb = None
+                analyze_columns_xls(df)
+
+            except Exception:
+                actual_format = detect_excel_format(file_path)
+                if actual_format == 'xlsx':
+                    repaired = attempt_repair_xls(file_path)
+                    if repaired:
+                        wb = px.load_workbook(repaired, data_only=True)
+                        analyze_columns_xlsx(wb)
+                else:
+                    messagebox.showerror("エラー", "xlsファイルが破損しているか、形式が異なっています。")
+        else:
+            try:
+                wb = px.load_workbook(file_path, data_only=True)
+                analyze_columns_xlsx(file_path)  # この中で列名処理を追加する必要あり
+            except Exception as e:
+                messagebox.showerror("エラー", f"ファイルを読み込めませんでした\n{e}")
     else:
-        file_path = None # ← 選択がキャンセルされたらリセット
+        file_path = None
         file_label.config(text="ファイル未選択")
         columns_text.set("")
         return
 
+def get_excel_column_name(n):
+    """1-indexedでA, B, ..., Z, AA, AB, ... を返す"""
+    name = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        name = "列" + chr(65 + rem) + name
+    return name
+
 def analyze_columns_xls(df):
-    result_lines = []
-
-    for col in df.columns:
-        count = df[col].apply(lambda x: isinstance(x, (int, float))).sum()
-        result_lines.append(f"{col}: {count}件の数値データ")
-
-    columns_text.set("\n".join(result_lines))
-
+    for i, col in enumerate(df.columns):
+        count = pd.to_numeric(df[col], errors='coerrse').notna().sum()
+        tk.Label(columns_frame, text=str(col), anchor="w", width=25).grid(row=i, column=0, sticky="w")
+        tk.Label(columns_frame, text=f"{count}個", anchor="e", width=10).grid(row=i, column=1, sticky="e")
+        
 def analyze_columns_xlsx(filepath):
+    clear_columns_display()
+
     try:
         if filepath.endswith(".xls"):
             df = pd.read_excel(filepath, engine="xlrd", header=None)
+            for i, col in enumerate(df.columns):
+                count = pd.to_numeric(df[col], errors='coerce').notna().sum()
+                tk.Label(columns_frame, text=str(col), anchor="w", width=25).grid(row=i, column=0, sticky="w")
+                tk.Label(columns_frame, text=f"{count}個", anchor="e", width=10).grid(row=i, column=1, sticky="e")
         else:
             wb = px.load_workbook(filepath, data_only=True)
             sheet = wb.active
             max_col = sheet.max_column
             max_row = sheet.max_row
 
-            result_lines = []
+            tk.Label(columns_frame, text="列名", font=("Helvetica", 10, "bold"), anchor="w", width=25).grid(row=0, column=0, sticky="w")
+            tk.Label(columns_frame, text="データ個数", font=("Helvetica", 10, "bold"), anchor="e", width=10).grid(row=0, column=1, sticky="e")
 
-            for col_idx in range(1, max_col +1):
-                part1 = sheet.cell(row=1, column=col_idx).value or ""
-                part2 = sheet.cell(row=2, column=col_idx).value or ""
-                col_name = f"{part1}/{part2}".strip(" /")
+            for col_idx in range(1, max_col + 1):
+                part1 = sheet.cell(row=1, column=col_idx).value
+                part2 = sheet.cell(row=2, column=col_idx).value
+
+                # 両方ともNoneまたは空文字ならExcel列名に置き換え
+                if (not part1 or str(part1).strip() == "") and (not part2 or str(part2).strip() == ""):
+                    col_name = get_excel_column_name(col_idx)
+                else:
+                    # 片方でも値がある場合は結合（空白やスラッシュ調整）
+                    col_name = f"{part1 or ''}/{part2 or ''}".strip(" /")
 
                 count = 0
-                for row in range (2, max_row +1):
+                for row in range(2, max_row + 1):
                     cell = sheet.cell(row=row, column=col_idx)
                     if isinstance(cell.value, (int, float)):
                         count += 1
 
-                result_lines.append(f"{col_name}: {count}件の数値データ")
-
-            columns_text.set("\n".join(result_lines))
-            return
-    
-        # xlsの場合（pandas使用）
-        result_lines = []
-        for col in df.columns:
-            count = pd.to_numeric(df[col], errors='coerce').notna().sum()
-            result_lines.append(f"{col_name}: {count}件の数値データ")
-        
-        columns_text.set("\n".join(result_lines))
+                row_num = col_idx
+                tk.Label(columns_frame, text=col_name, anchor="w", width=25).grid(row=row_num, column=0, sticky="w")
+                tk.Label(columns_frame, text=f"{count}件", anchor="e", width=10).grid(row=row_num, column=1, sticky="e")
 
     except Exception as e:
         messagebox.showerror("エラー", f"ファイルを読み込めませんでした\n{e}")
+
+def clear_columns_display():
+    global columns_frame
+
+    for widget in columns_frame.winfo_children():
+        widget.destroy()
 
 def save_file():
     global wb, df
@@ -231,7 +252,7 @@ class ToolTip:
             self.tip_window = None
 
 def main():
-    global root, file_label, columns_text
+    global root, file_label, columns_text, columns_frame
 
     # GUIウィンドウ作成
     root = tk.Tk()
@@ -259,29 +280,23 @@ def main():
     right_frame = tk.Frame(root)
     right_frame.grid(row=0, column=1, sticky="n", padx=10, pady=10)
 
-    #左側の表示
-    #概要を表示する
+    # 左側の表示
     description = tk.Label(left_frame, text="Excelファイルを読み込み、\n単位変換とグラフ描画を行います(´・ω・｀)", font=("Helvetica", 9))
     description.pack(pady =(0, 10))
 
-    #「ファイルを開く」ボタン
     open_button = tk.Button(left_frame, text="Excelファイルを開く", width=20, height=2, command=open_file)
     open_button.pack(pady=10)
 
-    #「名前をつけて保存」ボタン
     save_button = tk.Button(left_frame, text="保存先を指定して保存", width=20, height=2, command=save_file)
-    save_button.pack(pady=5)
+    save_button.pack(pady=10)
 
-    #「アプリを終了する」ボタン
     quit_button = tk.Button(left_frame, text = "アプリを終了する", width=20, height=2, command=quit_app)
-    quit_button.pack(pady=5)
+    quit_button.pack(pady=10)
 
-    #ファイル名表示用ラベル
     file_label = tk.Label(right_frame, text="ファイル未選択", fg="blue", font=("Helvetica", 10), cursor="hand2")
     file_label.pack(pady=(0, 10))
-    file_label.bind("<Button-1>", open_selected_file)  # ← クリック時の動作
+    file_label.bind("<Button-1>", open_selected_file)
 
-    # ツールチップ風に表示するためにホバーでヒント
     def on_enter(event):
         file_label.config(text=file_label.cget("text"))
 
@@ -295,13 +310,28 @@ def main():
     file_label.bind("<Enter>", on_enter)
     file_label.bind("<Leave>", on_leave)
 
-
     columns_text = tk.StringVar()
     tk.Label(right_frame, textvariable=columns_text, justify="left", wraplength=250, anchor="w").pack(pady=10)
 
-    
+    # 🧩 スクロール可能な columns_frame を定義
+    canvas = tk.Canvas(right_frame, width=300, height=250)
+    scrollbar = tk.Scrollbar(right_frame, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    scrollbar.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+
+    global columns_frame
+    columns_frame = tk.Frame(canvas)
+    canvas.create_window((0, 0), window=columns_frame, anchor="nw")
+
+    def on_frame_configure(event):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    columns_frame.bind("<Configure>", on_frame_configure)
 
     root.mainloop()
+
 
 if __name__ == "__main__":
     show_splash_and_launch_main()
