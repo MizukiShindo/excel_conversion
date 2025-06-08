@@ -16,6 +16,28 @@ def read_excel_file(filepath):
 
     return df
 
+def detect_excel_format(filepath):
+    with open(filepath, 'rb') as f:
+        header = f.read(8)
+    
+    if header.startswith(b'\xD0\xCF\x11\xE0'):  # .xls (OLE Compound File Binary)
+        return 'xls'
+    elif header.startswith(b'PK'):  # .xlsx (ZIP-based)
+        return 'xlsx'
+    else:
+        return 'unknown'
+    
+def attempt_repair_xls(filepath):
+    try:
+        df = pd.read_excel(filepath, engine="xlrd")
+        save_path = filepath.replace(".xls", "_converted.xlsx")
+        df.to_excel(save_path, index=False)
+        messagebox.showinfo("修復成功", f"新しいExcelファイルとして保存しました:\n{save_path}")
+        return save_path
+    except Exception as e:
+        messagebox.showerror("修復失敗", f"ファイル修復に失敗しました:\n{e}")
+        return None
+
 def open_file():
     global wb
     file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
@@ -29,8 +51,15 @@ def open_file():
                 df = pd.read_excel(file_path, engine="xlrd")
                 wb = None
                 analyze_columns_xls(df)
-            except Exception as e:
-                messagebox.showerror("エラー", f"ファイルを読み込めませんでした\n{e}")
+            except Exception:
+                actual_format = detect_excel_format(file_path)
+                if actual_format == 'xlsx':
+                    repaired = attempt_repair_xls(file_path)
+                    if repaired:
+                        wb = px.load_workbook(repaired, data_only=True)
+                        analyze_columns_xlsx(wb)
+                else:
+                    messagebox.showerror("エラー", "xlsファイルが破損しているか、形式が異なっています。")
         else:
             try:
                 wb = px.load_workbook(file_path, data_only=True)
