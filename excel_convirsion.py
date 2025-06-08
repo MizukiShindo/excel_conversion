@@ -7,6 +7,7 @@ import os
 
 #グローバル変数としてワークブックを保持する
 wb = None
+df = None
 
 def read_excel_file(filepath):
     if filepath.endswith(".xls"):
@@ -39,12 +40,14 @@ def attempt_repair_xls(filepath):
         return None
 
 def open_file():
-    global wb
+    global wb, df
     file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
 
     if file_path:
         filename = os.path.basename(file_path)
-        file_label.config(text=f"{filename}")
+        file_label.config(text=f"{filename}", fg ="blue", cursor="hand2")
+        file_label.bind("<Button-1>", lambda e: os.startfile(file_path))
+        ToolTip(file_label, "クリックでファイルを開く")
 
         if file_path.endswith(".xls"):
             try:
@@ -80,7 +83,6 @@ def analyze_columns_xls(df):
         result_lines.append(f"{col}: {count}件の数値データ")
 
     columns_text.set("\n".join(result_lines))
-
 
 def analyze_columns_xlsx(filepath):
     try:
@@ -121,19 +123,36 @@ def analyze_columns_xlsx(filepath):
     except Exception as e:
         messagebox.showerror("エラー", f"ファイルを読み込めませんでした\n{e}")
 
-
 def save_file():
-    global wb
-    if wb is None:
+    global wb, df
+    if wb is None and df is None:
         messagebox.showwarning("エラー", "まずExcelファイル(*.xlsxまたは*.xls)を開いてくださいヽ(`Д´)ﾉ")
         return
-    
-    save_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")], title = "名前を付けて保存")
 
-    if save_path:
-        wb.save(save_path)
+    save_path = filedialog.asksaveasfilename(
+        defaultextension=".xlsx",
+        filetypes=[("Excel files", "*.xlsx")],
+        title="名前を付けて保存"
+    )
+
+    if not save_path:
+        return  # キャンセルされた場合は何もしない
+
+    try:
+        if save_path.endswith(".xls"):
+            messagebox.showwarning("保存形式エラー", "xls形式には保存できません。xlsx形式で保存してください。")
+            return
+
+        if df is not None:
+            df.to_excel(save_path, index=False)
+        else:
+            wb.save(save_path)
+
         messagebox.showinfo("保存完了", f"Excelファイルを保存しました:\n{save_path}")
         print(f"ファイルを保存しました: {save_path}")
+
+    except Exception as e:
+        messagebox.showerror("保存失敗", f"ファイルの保存に失敗しました:\n{e}")
     
 def quit_app():
     tk.Tk().withdraw()
@@ -142,48 +161,77 @@ def quit_app():
     if res is True:
         root.quit()
 
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        widget.bind("<Enter>", self.show_tip)
+        widget.bind("<Leave>", self.hide_tip)
 
-# GUIウィンドウ作成
-root = tk.Tk()
-root.title("Excelデータ変換")
+    def show_tip(self, event=None):
+        if self.tip_window or not self.text:
+            return
+        x, y, _, _ = self.widget.bbox("insert")
+        x = x + self.widget.winfo_rootx() + 20
+        y = y + self.widget.winfo_rooty() + 20
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)  # 枠なし
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, background="#ffffe0", relief="solid", borderwidth=1, font=("Helvetica", 9))
+        label.pack()
 
-# ウィンドウの幅と高さ
-window_width = 600
-window_height = 400
+    def hide_tip(self, event=None):
+        if self.tip_window:
+            self.tip_window.destroy()
+            self.tip_window = None
 
-# 画面サイズの取得
-screen_width = root.winfo_screenwidth()
-screen_height = root.winfo_screenheight()
+def main():
+    global root, file_label, columns_text
 
-# 中央座標の計算
-x = int((screen_width - window_width) / 2)
-y = int((screen_height - window_height) / 2)
+    # GUIウィンドウ作成
+    root = tk.Tk()
+    root.title("Excelデータ変換")
 
-# ウィンドウの位置を設定
-root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+    # ウィンドウの幅と高さ
+    window_width = 600
+    window_height = 400
 
-#概要を表示する
-description = tk.Label(root, text="Excelファイルを読み込み、単位変換とグラフ描画を行います(´・ω・｀)", font=("Helvetica", 9))
-description.pack(padx = 10, pady =(10, 5))
+    # 画面サイズの取得
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
 
-#「ファイルを開く」ボタン
-open_button = tk.Button(root, text="Excelファイルを開く", width=20, height=3, command=open_file)
-open_button.pack(padx=10, pady=10)
+    # 中央座標の計算
+    x = int((screen_width - window_width) / 2)
+    y = int((screen_height - window_height) / 2)
 
-#ファイル名表示用ラベル
-file_label = tk.Label(root, text="ファイル未選択", fg="blue", font=("Helvetica", 10))
-file_label.pack(padx=10, pady=10)
+    # ウィンドウの位置を設定
+    root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
-columns_text = tk.StringVar()
-tk.Label(root, textvariable=columns_text, justify="left", wraplength=550, anchor="w").pack(pady=10)
+    #概要を表示する
+    description = tk.Label(root, text="Excelファイルを読み込み、単位変換とグラフ描画を行います(´・ω・｀)", font=("Helvetica", 9))
+    description.pack(padx = 10, pady =(10, 5))
 
-#「名前をつけて保存」ボタン
-save_button = tk.Button(root, text="保存先を指定して保存", width=20, height=3, command=save_file)
-save_button.pack(padx=20, pady=10)
+    #「ファイルを開く」ボタン
+    open_button = tk.Button(root, text="Excelファイルを開く", width=20, height=3, command=open_file)
+    open_button.pack(padx=10, pady=10)
 
-#「アプリを終了する」ボタン
-quit_button = tk.Button(text = "アプリを終了する", width=20, height=3, command = quit_app)
-quit_button.pack(padx=30, pady=10)
+    #ファイル名表示用ラベル
+    file_label = tk.Label(root, text="ファイル未選択", fg="blue", font=("Helvetica", 10))
+    file_label.pack(padx=10, pady=10)
 
-root.mainloop()
+    columns_text = tk.StringVar()
+    tk.Label(root, textvariable=columns_text, justify="left", wraplength=550, anchor="w").pack(pady=10)
 
+    #「名前をつけて保存」ボタン
+    save_button = tk.Button(root, text="保存先を指定して保存", width=20, height=3, command=save_file)
+    save_button.pack(padx=20, pady=10)
+
+    #「アプリを終了する」ボタン
+    quit_button = tk.Button(text = "アプリを終了する", width=20, height=3, command = quit_app)
+    quit_button.pack(padx=30, pady=10)
+
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
