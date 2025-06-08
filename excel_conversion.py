@@ -4,10 +4,48 @@ from tkinter import filedialog, messagebox  #ファイル選択ダイアログ
 import openpyxl as px #pythonで.xlsxを開く追加ライブラリ
 import xlrd as pxl #pythonで.xlsを開く追加ライブラリ
 import os
+import subprocess
+import sys
 
 #グローバル変数としてワークブックを保持する
 wb = None
 df = None
+file_path = None
+
+def show_splash_and_launch_main():
+    splash = tk.Tk()
+    splash.title("起動中...")
+
+    # ウィンドウのサイズと位置
+    splash_width = 400
+    splash_height = 200
+    screen_width = splash.winfo_screenwidth()
+    screen_height = splash.winfo_screenheight()
+    x = int((screen_width - splash_width) / 2)
+    y = int((screen_height - splash_height) / 2)
+    splash.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
+    splash.overrideredirect(True)  # 枠やボタン非表示にする
+
+    # ラベルにタイトル表示
+    label = tk.Label(splash, text="Excel Data Converter\nwait...", font=("Helvetica", 16), pady=20)
+    label.pack(expand=True)
+
+    # 1500ms後（1.5秒後）にsplashを閉じてmain()を起動
+    splash.after(1500, lambda: [splash.destroy(), main()])
+    splash.mainloop()
+
+def open_selected_file(event=None):
+    global file_path
+    if file_path and os.path.exists(file_path):
+        try:
+            if sys.platform.startswith('darwin'):
+                subprocess.call(('open', file_path))
+            elif os.name == 'nt':
+                os.startfile(file_path)
+            elif os.name == 'posix':
+                subprocess.call(('xdg-open', file_path))
+        except Exception as e:
+            messagebox.showerror("エラー", f"ファイルを開けませんでした:\n{e}")
 
 def read_excel_file(filepath):
     if filepath.endswith(".xls"):
@@ -40,37 +78,43 @@ def attempt_repair_xls(filepath):
         return None
 
 def open_file():
-    global wb, df
-    file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
+    global wb, df, file_path
+    selected_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
 
-    if file_path:
+    if selected_path:
+        file_path = selected_path  # ← ここで記録
         filename = os.path.basename(file_path)
-        file_label.config(text=f"{filename}", fg ="blue", cursor="hand2")
-        file_label.bind("<Button-1>", lambda e: os.startfile(file_path))
-        ToolTip(file_label, "クリックでファイルを開く")
+        file_label.config(text=filename)
 
-        if file_path.endswith(".xls"):
-            try:
-                df = pd.read_excel(file_path, engine="xlrd")
-                wb = None
-                analyze_columns_xls(df)
-            except Exception:
-                actual_format = detect_excel_format(file_path)
-                if actual_format == 'xlsx':
-                    repaired = attempt_repair_xls(file_path)
-                    if repaired:
-                        wb = px.load_workbook(repaired, data_only=True)
-                        analyze_columns_xlsx(wb)
-                else:
-                    messagebox.showerror("エラー", "xlsファイルが破損しているか、形式が異なっています。")
-        else:
-            try:
-                wb = px.load_workbook(file_path, data_only=True)
-                analyze_columns_xlsx(file_path)
-            except Exception as e:
-                messagebox.showerror("エラー", f"ファイルを読み込めませんでした\n{e}")
+        if file_path:
+            filename = os.path.basename(file_path)
+            file_label.config(text=f"{filename}", fg ="blue", cursor="hand2")
+            file_label.bind("<Button-1>", lambda e: os.startfile(file_path))
+            ToolTip(file_label, "クリックでファイルを開く")
+
+            if file_path.endswith(".xls"):
+                try:
+                    df = pd.read_excel(file_path, engine="xlrd")
+                    wb = None
+                    analyze_columns_xls(df)
+                except Exception:
+                    actual_format = detect_excel_format(file_path)
+                    if actual_format == 'xlsx':
+                        repaired = attempt_repair_xls(file_path)
+                        if repaired:
+                            wb = px.load_workbook(repaired, data_only=True)
+                            analyze_columns_xlsx(wb)
+                    else:
+                        messagebox.showerror("エラー", "xlsファイルが破損しているか、形式が異なっています。")
+            else:
+                try:
+                    wb = px.load_workbook(file_path, data_only=True)
+                    analyze_columns_xlsx(file_path)
+                except Exception as e:
+                    messagebox.showerror("エラー", f"ファイルを読み込めませんでした\n{e}")
 
     else:
+        file_path = None # ← 選択がキャンセルされたらリセット
         file_label.config(text="ファイル未選択")
         columns_text.set("")
         return
@@ -98,7 +142,7 @@ def analyze_columns_xlsx(filepath):
 
             for col_idx in range(1, max_col +1):
                 part1 = sheet.cell(row=1, column=col_idx).value or ""
-                part2 = sheet.cell(row=1, column=col_idx).value or ""
+                part2 = sheet.cell(row=2, column=col_idx).value or ""
                 col_name = f"{part1}/{part2}".strip(" /")
 
                 count = 0
@@ -208,30 +252,56 @@ def main():
     # ウィンドウの位置を設定
     root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
+    #全体を左右の2カラムに分割するためのフレーム
+    left_frame = tk.Frame(root)
+    left_frame.grid(row=0, column=0, sticky="n", padx=10, pady=10)
+
+    right_frame = tk.Frame(root)
+    right_frame.grid(row=0, column=1, sticky="n", padx=10, pady=10)
+
+    #左側の表示
     #概要を表示する
-    description = tk.Label(root, text="Excelファイルを読み込み、単位変換とグラフ描画を行います(´・ω・｀)", font=("Helvetica", 9))
-    description.pack(padx = 10, pady =(10, 5))
+    description = tk.Label(left_frame, text="Excelファイルを読み込み、\n単位変換とグラフ描画を行います(´・ω・｀)", font=("Helvetica", 9))
+    description.pack(pady =(0, 10))
 
     #「ファイルを開く」ボタン
-    open_button = tk.Button(root, text="Excelファイルを開く", width=20, height=3, command=open_file)
-    open_button.pack(padx=10, pady=10)
-
-    #ファイル名表示用ラベル
-    file_label = tk.Label(root, text="ファイル未選択", fg="blue", font=("Helvetica", 10))
-    file_label.pack(padx=10, pady=10)
-
-    columns_text = tk.StringVar()
-    tk.Label(root, textvariable=columns_text, justify="left", wraplength=550, anchor="w").pack(pady=10)
+    open_button = tk.Button(left_frame, text="Excelファイルを開く", width=20, height=2, command=open_file)
+    open_button.pack(pady=10)
 
     #「名前をつけて保存」ボタン
-    save_button = tk.Button(root, text="保存先を指定して保存", width=20, height=3, command=save_file)
-    save_button.pack(padx=20, pady=10)
+    save_button = tk.Button(left_frame, text="保存先を指定して保存", width=20, height=2, command=save_file)
+    save_button.pack(pady=5)
 
     #「アプリを終了する」ボタン
-    quit_button = tk.Button(text = "アプリを終了する", width=20, height=3, command = quit_app)
-    quit_button.pack(padx=30, pady=10)
+    quit_button = tk.Button(left_frame, text = "アプリを終了する", width=20, height=2, command=quit_app)
+    quit_button.pack(pady=5)
+
+    #ファイル名表示用ラベル
+    file_label = tk.Label(right_frame, text="ファイル未選択", fg="blue", font=("Helvetica", 10), cursor="hand2")
+    file_label.pack(pady=(0, 10))
+    file_label.bind("<Button-1>", open_selected_file)  # ← クリック時の動作
+
+    # ツールチップ風に表示するためにホバーでヒント
+    def on_enter(event):
+        file_label.config(text=file_label.cget("text"))
+
+    def on_leave(event):
+        if file_path:
+            filename = os.path.basename(file_path)
+        else:
+            filename = "ファイル未選択"
+        file_label.config(text=filename)
+
+    file_label.bind("<Enter>", on_enter)
+    file_label.bind("<Leave>", on_leave)
+
+
+    columns_text = tk.StringVar()
+    tk.Label(right_frame, textvariable=columns_text, justify="left", wraplength=250, anchor="w").pack(pady=10)
+
+    
 
     root.mainloop()
 
 if __name__ == "__main__":
-    main()
+    show_splash_and_launch_main()
