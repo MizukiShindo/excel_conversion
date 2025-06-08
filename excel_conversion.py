@@ -51,14 +51,6 @@ def open_selected_file(event=None):
         except Exception as e:
             messagebox.showerror("エラー", f"ファイルを開けませんでした:\n{e}")
 
-def read_excel_file(filepath):
-    if filepath.endswith(".xls"):
-        df = pd.read_excel(filepath, engine="xlrd")
-    else:
-        df = pd.read_excel(filepath, engine="openpyxl")
-
-    return df
-
 def detect_excel_format(filepath):
     with open(filepath, 'rb') as f:
         header = f.read(8)
@@ -112,7 +104,7 @@ def open_file():
                         wb = px.load_workbook(repaired, data_only=True)
                         analyze_columns_xlsx(wb)
                 else:
-                    messagebox.showerror("エラー", "xlsファイルが破損しているか、形式が異なっています。")
+                    messagebox.showerror("エラー", "xlsファイルが破損しているか、形式が異なっています。\n（*.xls形式の場合、*.xlsx形式で保存することによって\n読み込める可能性があります）")
         else:
             try:
                 wb = px.load_workbook(file_path, data_only=True)
@@ -177,7 +169,7 @@ def analyze_columns_xlsx(filepath):
 
                 row_num = col_idx
                 tk.Label(columns_frame, text=col_name, anchor="w", width=25).grid(row=row_num, column=0, sticky="w")
-                tk.Label(columns_frame, text=f"{count}件", anchor="e", width=10).grid(row=row_num, column=1, sticky="e")
+                tk.Label(columns_frame, text=f"{count}個", anchor="e", width=10).grid(row=row_num, column=1, sticky="e")
 
     except Exception as e:
         messagebox.showerror("エラー", f"ファイルを読み込めませんでした\n{e}")
@@ -221,10 +213,11 @@ def save_file():
     
 def quit_app():
     tk.Tk().withdraw()
-    res = messagebox.askokcancel('アプリ終了', 'アプリを終了しますか？')
+    res = messagebox.askokcancel('ソフト終了', 'ソフトを終了しますか？\n（保存していないデータは失われます）')
 
     if res is True:
         root.quit()
+        exit()
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -290,8 +283,10 @@ def main():
     save_button = tk.Button(left_frame, text="保存先を指定して保存", width=20, height=2, command=save_file)
     save_button.pack(pady=10)
 
-    quit_button = tk.Button(left_frame, text = "アプリを終了する", width=20, height=2, command=quit_app)
+    quit_button = tk.Button(left_frame, text = "ソフトを終了する", width=20, height=2, command=quit_app)
     quit_button.pack(pady=10)
+
+    root.protocol("WM_DELETE_WINDOW", quit_app)
 
     file_label = tk.Label(right_frame, text="ファイル未選択", fg="blue", font=("Helvetica", 10), cursor="hand2")
     file_label.pack(pady=(0, 10))
