@@ -87,14 +87,13 @@ def open_file():
 
         if file_path.endswith(".xls"):
             try:
-                df = pd.read_excel(file_path, engine="xlrd")
+                wb = pxl.open_workbook(f"{file_path}")
 
                 # 列名がすべてUnnamedまたは欠損のときはExcel風の列名を生成
-                if all([str(col).startswith("Unnamed") or pd.isna(col) for col in df.columns]):
-                    df.columns = [get_excel_column_name(i + 1) for i in range(len(df.columns))]
+                # if all([str(col).startswith("Unnamed") or pd.isna(col) for col in wb.columns]):
+                #     wb.columns = [get_excel_column_name(i + 1) for i in range(len(wb.columns))]
 
-                wb = None
-                analyze_columns_xls(df)
+                analyze_columns(wb)
 
             except Exception:
                 actual_format = detect_excel_format(file_path)
@@ -102,13 +101,13 @@ def open_file():
                     repaired = attempt_repair_xls(file_path)
                     if repaired:
                         wb = px.load_workbook(repaired, data_only=True)
-                        analyze_columns_xlsx(wb)
+                        analyze_columns(wb)
                 else:
                     messagebox.showerror("エラー", "xlsファイルが破損しているか、形式が異なっています。\n（*.xls形式の場合、*.xlsx形式で保存することによって\n読み込める可能性があります）")
         else:
             try:
                 wb = px.load_workbook(file_path, data_only=True)
-                analyze_columns_xlsx(file_path)  # この中で列名処理を追加する必要あり
+                analyze_columns(wb)  # この中で列名処理を追加する必要あり
             except Exception as e:
                 messagebox.showerror("エラー", f"ファイルを読み込めませんでした\n{e}")
     else:
@@ -125,24 +124,21 @@ def get_excel_column_name(n):
         name = "列" + chr(65 + rem) + name
     return name
 
-def analyze_columns_xls(df):
-    for i, col in enumerate(df.columns):
-        count = pd.to_numeric(df[col], errors='coerrse').notna().sum()
-        tk.Label(columns_frame, text=str(col), anchor="w", width=25).grid(row=i, column=0, sticky="w")
-        tk.Label(columns_frame, text=f"{count}個", anchor="e", width=10).grid(row=i, column=1, sticky="e")
-        
-def analyze_columns_xlsx(filepath):
+def analyze_columns(wb):
     clear_columns_display()
 
     try:
-        if filepath.endswith(".xls"):
-            df = pd.read_excel(filepath, engine="xlrd", header=None)
-            for i, col in enumerate(df.columns):
-                count = pd.to_numeric(df[col], errors='coerce').notna().sum()
-                tk.Label(columns_frame, text=str(col), anchor="w", width=25).grid(row=i, column=0, sticky="w")
-                tk.Label(columns_frame, text=f"{count}個", anchor="e", width=10).grid(row=i, column=1, sticky="e")
+        if file_path.endswith(".xls"):
+                df = pd.read_excel(file_path, engine="xlrd", header=0)
+                tk.Label(columns_frame, text="列名", font=("Helvetica", 10, "bold"), anchor="w", width=25).grid(row=0, column=0, sticky="w")
+                tk.Label(columns_frame, text="データ個数", font=("Helvetica", 10, "bold"), anchor="w", width=10).grid(row=0, column=1, sticky="w")
+
+                for i, col in enumerate(df.columns):
+                    count = pd.to_numeric(df[col], errors='coerce').notna().sum()
+                    tk.Label(columns_frame, text=str(col), anchor="w", width=25).grid(row=i+1, column=0, sticky="w")
+                    tk.Label(columns_frame, text=f"{count}個", anchor="e", width=10).grid(row=i+1, column=1, sticky="e")
+
         else:
-            wb = px.load_workbook(filepath, data_only=True)
             sheet = wb.active
             max_col = sheet.max_column
             max_row = sheet.max_row
@@ -161,11 +157,11 @@ def analyze_columns_xlsx(filepath):
                     # 片方でも値がある場合は結合（空白やスラッシュ調整）
                     col_name = f"{part1 or ''}/{part2 or ''}".strip(" /")
 
-                count = 0
+                    count = 0
                 for row in range(2, max_row + 1):
-                    cell = sheet.cell(row=row, column=col_idx)
-                    if isinstance(cell.value, (int, float)):
-                        count += 1
+                        cell = sheet.cell(row=row, column=col_idx)
+                        if isinstance(cell.value, (int, float)):
+                            count += 1
 
                 row_num = col_idx
                 tk.Label(columns_frame, text=col_name, anchor="w", width=25).grid(row=row_num, column=0, sticky="w")
